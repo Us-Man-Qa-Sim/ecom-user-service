@@ -27,8 +27,11 @@ import {
   UserServiceController,
   UserServiceControllerMethods,
 } from '@us-man-qa-sim/ecom-contracts/generated/user';
+import { UserService } from './user.service';
+import { toProtoUser } from './user.mapper';
 
-// Every RPC is stubbed for USR-1. Real implementations land in USR-4 → USR-6.
+// Address RPCs and the auth token halves of Register/Login stay stubbed until
+// USR-5 and USR-6 land; Register itself is live from USR-4.
 function unimplemented(rpc: string): never {
   throw new RpcException({
     code: GrpcStatus.UNIMPLEMENTED,
@@ -39,8 +42,13 @@ function unimplemented(rpc: string): never {
 @Controller()
 @UserServiceControllerMethods()
 export class UserController implements UserServiceController {
-  register(_request: RegisterRequest): Promise<RegisterResponse> {
-    return unimplemented('Register');
+  constructor(private readonly userService: UserService) {}
+
+  async register(request: RegisterRequest): Promise<RegisterResponse> {
+    const user = await this.userService.register(request);
+    // tokens are minted in USR-5; leaving undefined here keeps the wire type
+    // faithful to what this phase actually produces.
+    return { user: toProtoUser(user), tokens: undefined };
   }
 
   login(_request: LoginRequest): Promise<LoginResponse> {

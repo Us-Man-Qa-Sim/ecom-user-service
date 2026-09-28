@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { OutboxModule } from './outbox/outbox.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UserModule } from './user/user.module';
 
@@ -26,6 +27,7 @@ import { UserModule } from './user/user.module';
       }),
     }),
     PrismaModule,
+    OutboxModule,
     HealthModule,
     UserModule,
   ],

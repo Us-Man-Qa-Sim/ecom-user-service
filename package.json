@@ -36,6 +36,7 @@
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "@us-man-qa-sim/ecom-contracts": "0.1.0",
+    "argon2": "0.45.1",
     "pg": "8.23.0",
     "prisma": "7.10.0",
     "class-transformer": "0.5.1",
@@ -51,6 +52,8 @@
     "@nestjs/cli": "12.0.7",
     "@nestjs/schematics": "12.0.6",
     "@nestjs/testing": "12.1.0",
+    "@swc/core": "1.16.2",
+    "@swc/jest": "0.2.39",
     "@types/jest": "30.0.0",
     "@types/node": "24.19.0",
     "@types/pg": "8.23.1",
@@ -72,6 +75,8 @@
     "@prisma/engines@7.10.0": true,
     "protobufjs@7.6.6": true,
     "@parcel/watcher@2.6.0": true,
-    "unrs-resolver@1.12.2": true
+    "unrs-resolver@1.12.2": true,
+    "argon2@0.45.1": true,
+    "@swc/core@1.16.2": true
   }
 }
