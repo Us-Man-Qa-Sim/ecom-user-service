@@ -1,0 +1,13 @@
+// Prisma schema for user-service.
+// USR-1: datasource + generator only. Models are added in USR-2 per SCHEMAS.md §1.
+// Note: Prisma 7 dropped `url` in `datasource`. The connection string is passed to
+// Prisma Migrate via prisma.config.ts and to PrismaClient at runtime via the
+// @prisma/adapter-pg adapter (see src/prisma/prisma.service.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
