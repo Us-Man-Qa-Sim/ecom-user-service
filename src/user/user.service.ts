@@ -27,6 +27,17 @@ export class UserService {
     private readonly outbox: OutboxService,
   ) {}
 
+  async getById(userId: string): Promise<PrismaUser> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new RpcException({
+        code: GrpcStatus.NOT_FOUND,
+        message: 'User not found',
+      });
+    }
+    return user;
+  }
+
   async register(raw: unknown): Promise<PrismaUser> {
     const input = this.parseRegisterInput(raw);
     const passwordHash = await argon2.hash(input.password, ARGON2_OPTS);

@@ -33,6 +33,8 @@ export const envSchema = z.object({
   JWT_PUBLIC_KEY_PATH: z.string().optional(),
   JWT_ACCESS_TTL_SECONDS: numericString(900),
   JWT_REFRESH_TTL_SECONDS: numericString(60 * 60 * 24 * 30),
+  JWT_ISSUER: z.string().default('user-service'),
+  JWT_AUDIENCE: z.string().default('ecom-api'),
 });
 
 export type Env = z.infer<typeof envSchema>;

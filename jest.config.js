@@ -22,7 +22,7 @@ module.exports = {
     ],
   },
   transformIgnorePatterns: [
-    '/node_modules/(?!(@nestjs|@us-man-qa-sim|rxjs|uuid|iterare|tslib)/)',
+    '/node_modules/(?!(@nestjs|@us-man-qa-sim|rxjs|uuid|iterare|tslib|jose)/)',
   ],
   collectCoverageFrom: ['src/**/*.(t|j)s'],
   coverageDirectory: 'coverage',
