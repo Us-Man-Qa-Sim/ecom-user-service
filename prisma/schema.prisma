@@ -1,13 +1,90 @@
-// Prisma schema for user-service.
-// USR-1: datasource + generator only. Models are added in USR-2 per SCHEMAS.md §1.
-// Note: Prisma 7 dropped `url` in `datasource`. The connection string is passed to
-// Prisma Migrate via prisma.config.ts and to PrismaClient at runtime via the
-// @prisma/adapter-pg adapter (see src/prisma/prisma.service.ts).
+// Prisma schema for user-service (USR-2).
+// Mirrors SCHEMAS.md §1 verbatim: User, Address, RefreshToken, Outbox.
+// Prisma 7 note: `datasource.url` is set in prisma.config.ts (migrations) and via
+// @prisma/adapter-pg at runtime (see src/prisma/prisma.service.ts).
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // partialIndexes: needed for `@@index([sentAt], where: { sentAt: null })` on Outbox.
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  role         Role     @default(CUSTOMER)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  addresses     Address[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model Address {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  label      String? // "Home", "Work", etc.
+  street     String
+  city       String
+  state      String?
+  postalCode String   @map("postal_code")
+  country    String   @db.Char(2) // ISO 3166-1 alpha-2
+  isDefault  Boolean  @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// RefreshToken.family groups all tokens descended from a single login. On
+// rotation the previous token is revoked; if a revoked token is reused, the
+// whole family is revoked (reuse detection — implemented in USR-5).
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  family    String    @db.Uuid
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([family])
+  @@map("refresh_tokens")
+}
+
+// Transactional outbox. The relay polls unsent rows with
+// `SELECT ... WHERE sent_at IS NULL ORDER BY created_at FOR UPDATE SKIP LOCKED`,
+// publishes to Kafka, then sets sent_at. The partial index keeps that poll fast
+// once most rows have been published.
+model Outbox {
+  id            String    @id @default(uuid()) @db.Uuid
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id")
+  eventType     String    @map("event_type")
+  payload       Json
+  createdAt     DateTime  @default(now()) @map("created_at")
+  sentAt        DateTime? @map("sent_at")
+
+  @@index([sentAt], where: { sentAt: null })
+  @@map("outbox")
 }
