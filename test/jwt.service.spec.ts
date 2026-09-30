@@ -41,7 +41,9 @@ describe('JwtService', () => {
     // env is complex; instead we reach into the service via signAccessToken and
     // recover the public key from the JWK the token references. But the service
     // exposes no JWKS. Cleaner: replace the internal keys directly.
-    (service as unknown as { keys: { privateKey: unknown; publicKey: unknown; kid: string } }).keys = {
+    (
+      service as unknown as { keys: { privateKey: unknown; publicKey: unknown; kid: string } }
+    ).keys = {
       privateKey: kp.privateKey,
       publicKey: kp.publicKey,
       kid: 'test-kid',

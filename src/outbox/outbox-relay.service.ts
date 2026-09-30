@@ -3,7 +3,7 @@ import {
   Injectable,
   Logger,
   OnApplicationBootstrap,
-  OnApplicationShutdown,
+  OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
@@ -42,7 +42,7 @@ interface OutboxRow {
 // is the table name `outbox`. Copy this file plus publisher.ts / kafka.module
 // into order-service unchanged and you get the same relay.
 @Injectable()
-export class OutboxRelayService implements OnApplicationBootstrap, OnApplicationShutdown {
+export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(OutboxRelayService.name);
   private readonly enabled: boolean;
   private readonly pollIntervalMs: number;
@@ -75,14 +75,17 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnApplication
     this.scheduleNextTick(0);
   }
 
-  async onApplicationShutdown(): Promise<void> {
+  // Stop in onModuleDestroy, not onApplicationShutdown: Nest runs every
+  // onModuleDestroy hook before any onApplicationShutdown hook, and Prisma /
+  // Kafka close their connections in onApplicationShutdown. Draining here
+  // guarantees the in-flight tick still has both clients available.
+  async onModuleDestroy(): Promise<void> {
     this.stopped = true;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    // Wait for the in-flight tick to finish so we do not disconnect Prisma or
-    // Kafka out from under a publish that is halfway through.
+    // Wait for the in-flight tick to finish so its publish + mark-sent commit.
     const start = Date.now();
     while (this.running && Date.now() - start < 10_000) {
       await sleep(50);

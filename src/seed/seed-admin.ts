@@ -129,17 +129,14 @@ export async function main(): Promise<void> {
     const outcome = await seedAdmin(prisma, input);
     switch (outcome.action) {
       case 'created':
-        // eslint-disable-next-line no-console
         console.log(`[seed-admin] created admin ${outcome.email} (id=${outcome.userId})`);
         break;
       case 'promoted':
-        // eslint-disable-next-line no-console
         console.log(
           `[seed-admin] promoted existing user ${outcome.email} (id=${outcome.userId}) to ADMIN`,
         );
         break;
       case 'unchanged':
-        // eslint-disable-next-line no-console
         console.log(
           `[seed-admin] admin ${outcome.email} already present (id=${outcome.userId}); no changes`,
         );
@@ -153,3 +150,14 @@ export async function main(): Promise<void> {
 // `main` is exported so the JS launcher (`scripts/seed-admin.js`) can call it
 // after registering ts-node. Tests import `seedAdmin` and `parseEnv` directly
 // and never invoke `main`, so no DB connection is opened during unit tests.
+//
+// When the compiled file is itself the program entry point
+// (`node dist/seed/seed-admin.js` in the container, where ts-node and scripts/
+// are pruned) run `main` here. Under the launcher, `require.main` is the
+// launcher module, so this branch does not fire and main runs exactly once.
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    console.error('[seed-admin] failed:', err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}

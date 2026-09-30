@@ -4,7 +4,10 @@ import { z } from 'zod';
 // accounts predate whatever the current policy is, and login must still work
 // for them. Upper bound guards against a pathological argon2.verify() call.
 export const LoginInputSchema = z.object({
-  email: z.email().max(254).transform((v) => v.trim().toLowerCase()),
+  email: z
+    .email()
+    .max(254)
+    .transform((v) => v.trim().toLowerCase()),
   password: z.string().min(1).max(1024),
 });
 

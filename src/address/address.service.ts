@@ -17,9 +17,10 @@ export class AddressService {
 
   async create(identity: Identity, raw: unknown): Promise<PrismaAddress> {
     const input = parse(CreateAddressInputSchema, raw, 'CreateAddress');
-    // Setting isDefault has to un-default the sibling in one transaction — a
-    // two-step approach can end up with two defaults if a concurrent create
-    // interleaves. We do the same in update() below.
+    // Setting isDefault has to un-default the sibling in one transaction, and
+    // clearDefault() also locks the owning user row so two concurrent
+    // "make default" writes for the same user serialise instead of both
+    // clearing and both inserting a default. We do the same in update() below.
     return this.prisma.$transaction(async (tx) => {
       if (input.isDefault) {
         await this.clearDefault(tx, identity.userId, null);
@@ -97,6 +98,11 @@ export class AddressService {
     userId: string,
     exceptId: string | null,
   ): Promise<void> {
+    // Under READ COMMITTED, two concurrent transactions can each clear the
+    // (not-yet-committed) sibling and then both write isDefault=true. Taking a
+    // row lock on the owning user serialises default changes per user; the
+    // second tx waits here and then sees the first one's committed default.
+    await tx.$executeRaw`SELECT 1 FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
     await tx.address.updateMany({
       where: {
         userId,
@@ -130,4 +136,3 @@ function parse<T>(schema: ZodType<T>, raw: unknown, rpc: string): T {
   }
   return parsed.data;
 }
-

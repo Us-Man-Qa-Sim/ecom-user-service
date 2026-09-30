@@ -70,10 +70,7 @@ function makePublisher(): { publisher: Publisher; publish: jest.Mock } {
 
 describe('OutboxRelayService.drainOnce', () => {
   it('publishes every unsent row and marks them sent', async () => {
-    const rows = [
-      envelope('user-1', 'user.registered'),
-      envelope('user-2', 'user.registered'),
-    ];
+    const rows = [envelope('user-1', 'user.registered'), envelope('user-2', 'user.registered')];
     const { prisma, updateMany, remaining } = makePrisma(rows);
     const { publisher, publish } = makePublisher();
     const relay = new OutboxRelayService(makeConfig(), prisma, publisher);
@@ -114,11 +111,7 @@ describe('OutboxRelayService.drainOnce', () => {
     const publish = jest.fn(async () => {
       throw new Error('kafka down');
     });
-    const relay = new OutboxRelayService(
-      makeConfig(),
-      prisma,
-      { publish } as unknown as Publisher,
-    );
+    const relay = new OutboxRelayService(makeConfig(), prisma, { publish } as unknown as Publisher);
 
     // The transaction stand-in returns the callback's promise directly, so the
     // thrown error bubbles up here as it would from a real Prisma rollback.
@@ -157,7 +150,7 @@ describe('OutboxRelayService lifecycle', () => {
     // relay (which is a no-op). Either way no new timers should live past the
     // shutdown call.
     relay.onApplicationBootstrap();
-    await relay.onApplicationShutdown();
+    await relay.onModuleDestroy();
     setTimeoutSpy.mockClear();
 
     // Nothing should schedule after shutdown, even if we manually reach in.

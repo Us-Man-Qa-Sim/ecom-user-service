@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { User as PrismaUser } from '@prisma/client';
 import { TOPICS } from '@us-man-qa-sim/ecom-contracts/events';
+import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { OutboxService } from '../outbox/outbox.service';
 import { NotFoundError, ValidationError } from '../common/errors/domain-errors';
@@ -15,6 +16,12 @@ export class UserService {
   ) {}
 
   async getById(userId: string): Promise<PrismaUser> {
+    // `users.id` is a Postgres UUID column: querying it with a non-UUID string
+    // raises a driver error that would surface as INTERNAL. Such an id cannot
+    // exist, so answer NOT_FOUND without touching the database.
+    if (!z.uuid().safeParse(userId).success) {
+      throw new NotFoundError('User not found');
+    }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new NotFoundError('User not found');

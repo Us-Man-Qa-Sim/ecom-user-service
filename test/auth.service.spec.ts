@@ -4,10 +4,7 @@ import * as argon2 from 'argon2';
 import { AuthService } from '../src/auth/auth.service';
 import { hashRefreshToken, JwtService } from '../src/auth/jwt.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
-import {
-  UnauthenticatedError,
-  ValidationError,
-} from '../src/common/errors/domain-errors';
+import { UnauthenticatedError, ValidationError } from '../src/common/errors/domain-errors';
 
 interface RefreshRow extends RefreshToken {
   user?: User;
@@ -88,7 +85,24 @@ function makePrisma(store: ReturnType<typeof makeStore>): PrismaService {
   return {
     refreshToken: refreshTokenApi,
     user: userApi,
-    $transaction: async (fn: any) => fn({ refreshToken: refreshTokenApi, user: userApi }),
+    // Mirrors Prisma's interactive-transaction contract: if the callback throws,
+    // every write made inside it is rolled back. Without this, a service that
+    // writes and then throws inside the tx would look correct here but lose the
+    // write against a real database.
+    $transaction: async (fn: any) => {
+      const snapshot = new Map([...store.refreshes].map(([id, row]) => [id, { ...row }]));
+      try {
+        return await fn({ refreshToken: refreshTokenApi, user: userApi });
+      } catch (err) {
+        store.refreshes.clear();
+        store.refreshesByHash.clear();
+        for (const [id, row] of snapshot) {
+          store.refreshes.set(id, row);
+          store.refreshesByHash.set(row.tokenHash, row);
+        }
+        throw err;
+      }
+    },
   } as unknown as PrismaService;
 }
 
@@ -114,7 +128,12 @@ function makeJwtService(): JwtService {
 }
 
 async function seededUser(store: ReturnType<typeof makeStore>, password: string): Promise<User> {
-  const passwordHash = await argon2.hash(password, { type: argon2.argon2id, memoryCost: 19456, timeCost: 1, parallelism: 1 });
+  const passwordHash = await argon2.hash(password, {
+    type: argon2.argon2id,
+    memoryCost: 19456,
+    timeCost: 1,
+    parallelism: 1,
+  });
   const user: User = {
     id: randomUUID(),
     email: 'alice@example.com',
@@ -262,4 +281,3 @@ describe('AuthService', () => {
     });
   });
 });
-

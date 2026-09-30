@@ -149,7 +149,9 @@ describe('UserController', () => {
 
     it('lets an admin read anyone', async () => {
       const { controller, userService } = build();
-      userService.getById.mockResolvedValue(makeUser({ id: 'user-bob', role: PrismaRole.CUSTOMER }));
+      userService.getById.mockResolvedValue(
+        makeUser({ id: 'user-bob', role: PrismaRole.CUSTOMER }),
+      );
 
       const res = await controller.getUser(
         { userId: 'user-bob' },
@@ -200,7 +202,10 @@ describe('UserController', () => {
 
       const res = await controller.updateAddress(req, meta);
 
-      expect(addressService.update).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-alice' }), req);
+      expect(addressService.update).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-alice' }),
+        req,
+      );
       expect(res.address?.street).toBe('2 Second');
     });
 

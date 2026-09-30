@@ -4,16 +4,10 @@ import { Prisma, User as PrismaUser } from '@prisma/client';
 import * as argon2 from 'argon2';
 import type { ZodType } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  UnauthenticatedError,
-  ValidationError,
-} from '../common/errors/domain-errors';
+import { UnauthenticatedError, ValidationError } from '../common/errors/domain-errors';
 import { hashRefreshToken, JwtService, MintedAccessToken, MintedRefreshToken } from './jwt.service';
-import {
-  LoginInputSchema,
-  LogoutInputSchema,
-  RefreshInputSchema,
-} from './dto/login.dto';
+import { LoginInputSchema, LogoutInputSchema, RefreshInputSchema } from './dto/login.dto';
+import { hashPassword } from '../user/password.util';
 
 export interface IssuedTokens {
   access: MintedAccessToken;
@@ -28,6 +22,7 @@ export interface LoginResult {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private dummyHashPromise?: Promise<string>;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -40,7 +35,12 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email: input.email } });
     // Same error whether the email is unknown or the password is wrong: a
     // distinct "no such user" message would let an attacker enumerate accounts.
-    if (!user || !(await argon2.verify(user.passwordHash, input.password))) {
+    // For the same reason an unknown email still pays for one argon2 verify —
+    // otherwise the ~100 ms hash cost makes "no such user" measurably faster.
+    const passwordOk = user
+      ? await argon2.verify(user.passwordHash, input.password)
+      : await argon2.verify(await this.dummyHash(), input.password).then(() => false);
+    if (!user || !passwordOk) {
       throw new UnauthenticatedError('Invalid email or password');
     }
 
@@ -55,8 +55,8 @@ export class AuthService {
     // Wrap the lookup + rotation in a serializable transaction so two concurrent
     // refreshes of the same token can't both succeed. The reuse check depends
     // on the row's revokedAt state; a repeatable-read view is not enough.
-    const tokens = await this.prisma.$transaction(
-      async (tx) => {
+    const outcome = await this.prisma.$transaction(
+      async (tx): Promise<{ reused: true } | { reused: false; tokens: IssuedTokens }> => {
         const existing = await tx.refreshToken.findUnique({
           where: { tokenHash: presentedHash },
           include: { user: true },
@@ -71,6 +71,9 @@ export class AuthService {
           // the legitimate holder is replaying an old response, or the token was
           // stolen. In both cases the safe move is to burn the family — the
           // attacker loses access and the legitimate user is forced to log in.
+          // We must NOT throw inside the callback: Prisma rolls the interactive
+          // transaction back on throw, which would undo the family revocation.
+          // Return a marker instead, let the tx commit, then throw below.
           await tx.refreshToken.updateMany({
             where: { family: existing.family, revokedAt: null },
             data: { revokedAt: new Date() },
@@ -79,7 +82,7 @@ export class AuthService {
             { userId: existing.userId, family: existing.family },
             'Refresh token reuse detected; revoking family',
           );
-          throw new UnauthenticatedError('Refresh token reuse detected');
+          return { reused: true };
         }
 
         if (existing.expiresAt.getTime() <= Date.now()) {
@@ -91,12 +94,18 @@ export class AuthService {
           data: { revokedAt: new Date() },
         });
 
-        return this.issueTokens(existing.user, existing.family, tx);
+        return {
+          reused: false,
+          tokens: await this.issueTokens(existing.user, existing.family, tx),
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
-    return { tokens };
+    if (outcome.reused) {
+      throw new UnauthenticatedError('Refresh token reuse detected');
+    }
+    return { tokens: outcome.tokens };
   }
 
   async logout(raw: unknown): Promise<void> {
@@ -110,6 +119,13 @@ export class AuthService {
       where: { tokenHash: presentedHash, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+  }
+
+  // Hashed lazily with the production cost params so the unknown-email path
+  // costs the same as a real verify. Computed once per process.
+  private dummyHash(): Promise<string> {
+    this.dummyHashPromise ??= hashPassword(randomUUID());
+    return this.dummyHashPromise;
   }
 
   private async issueTokens(

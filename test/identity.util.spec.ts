@@ -1,10 +1,7 @@
 import { Metadata } from '@grpc/grpc-js';
 import { Role } from '@prisma/client';
 import { readIdentity, requireAdmin } from '../src/identity/identity.util';
-import {
-  PermissionDeniedError,
-  UnauthenticatedError,
-} from '../src/common/errors/domain-errors';
+import { PermissionDeniedError, UnauthenticatedError } from '../src/common/errors/domain-errors';
 
 function md(entries: Record<string, string>): Metadata {
   const meta = new Metadata();
@@ -25,9 +22,7 @@ describe('readIdentity', () => {
   });
 
   it('accepts the proto-form role prefix', () => {
-    const identity = readIdentity(
-      md({ 'x-user-id': 'user-1', 'x-user-role': 'ROLE_ADMIN' }),
-    );
+    const identity = readIdentity(md({ 'x-user-id': 'user-1', 'x-user-role': 'ROLE_ADMIN' }));
     expect(identity.role).toBe(Role.ADMIN);
   });
 
@@ -52,8 +47,6 @@ describe('requireAdmin', () => {
   });
 
   it('rejects a customer with PermissionDeniedError', () => {
-    expect(() => requireAdmin({ userId: 'u', role: Role.CUSTOMER })).toThrow(
-      PermissionDeniedError,
-    );
+    expect(() => requireAdmin({ userId: 'u', role: Role.CUSTOMER })).toThrow(PermissionDeniedError);
   });
 });

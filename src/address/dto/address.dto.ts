@@ -7,7 +7,12 @@ const CountryCode = z
   .string()
   .trim()
   .transform((v) => v.toUpperCase())
-  .pipe(z.string().length(2).regex(/^[A-Z]{2}$/, 'must be an ISO 3166-1 alpha-2 code'));
+  .pipe(
+    z
+      .string()
+      .length(2)
+      .regex(/^[A-Z]{2}$/, 'must be an ISO 3166-1 alpha-2 code'),
+  );
 
 const OptionalLabel = z.string().trim().min(1).max(50).optional();
 const OptionalState = z.string().trim().min(1).max(100).optional();

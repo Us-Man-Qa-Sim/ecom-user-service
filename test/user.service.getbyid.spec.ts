@@ -41,4 +41,12 @@ describe('UserService.getById', () => {
     const service = new UserService(prisma, outbox);
     await expect(service.getById(randomUUID())).rejects.toBeInstanceOf(NotFoundError);
   });
+
+  it('throws NotFoundError for a non-UUID id without querying the database', async () => {
+    const { prisma, findUnique } = makePrisma(seeded);
+    const service = new UserService(prisma, outbox);
+    await expect(service.getById('not-a-uuid')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(service.getById('')).rejects.toBeInstanceOf(NotFoundError);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
 });

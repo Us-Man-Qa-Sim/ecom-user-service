@@ -1,4 +1,4 @@
-import { Controller } from '@nestjs/common';
+import { Controller, UseFilters } from '@nestjs/common';
 import type { Metadata } from '@grpc/grpc-js';
 import {
   CreateAddressRequest,
@@ -33,8 +33,10 @@ import { toProtoAuthTokens } from '../auth/auth.mapper';
 import { AddressService } from '../address/address.service';
 import { toProtoAddress } from '../address/address.mapper';
 import { readIdentity, requireAdmin } from '../identity/identity.util';
+import { GrpcExceptionFilter } from '../common/errors/grpc-exception.filter';
 
 @Controller()
+@UseFilters(GrpcExceptionFilter)
 @UserServiceControllerMethods()
 export class UserController implements UserServiceController {
   constructor(
@@ -120,10 +122,7 @@ export class UserController implements UserServiceController {
     return { addresses: addresses.map(toProtoAddress) };
   }
 
-  async getAddress(
-    request: GetAddressRequest,
-    metadata?: Metadata,
-  ): Promise<GetAddressResponse> {
+  async getAddress(request: GetAddressRequest, metadata?: Metadata): Promise<GetAddressResponse> {
     const identity = readIdentity(metadata);
     const address = await this.addressService.get(identity, request);
     return { address: toProtoAddress(address) };

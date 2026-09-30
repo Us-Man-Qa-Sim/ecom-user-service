@@ -76,10 +76,14 @@ function makePrisma(store: ReturnType<typeof makeStore>): PrismaService {
       return row;
     }),
   };
+  // clearDefault() takes a `SELECT ... FOR UPDATE` row lock on the user; the
+  // in-memory store has no concurrency, so the lock is a recorded no-op.
+  const executeRaw = jest.fn(async () => 1);
   return {
     address: addressApi,
-    $transaction: async (fn: any) => fn({ address: addressApi }),
-  } as unknown as PrismaService;
+    executeRaw,
+    $transaction: async (fn: any) => fn({ address: addressApi, $executeRaw: executeRaw }),
+  } as unknown as PrismaService & { executeRaw: jest.Mock };
 }
 
 const alice: Identity = { userId: 'user-alice', role: Role.CUSTOMER };
@@ -118,9 +122,25 @@ describe('AddressService', () => {
 
   it('creating a default un-defaults the previous default', async () => {
     const first = await service.create(alice, { ...basePayload, isDefault: true });
-    const second = await service.create(alice, { ...basePayload, street: '2 Second St', isDefault: true });
+    const second = await service.create(alice, {
+      ...basePayload,
+      street: '2 Second St',
+      isDefault: true,
+    });
     expect(store.rows.get(first.id)!.isDefault).toBe(false);
     expect(store.rows.get(second.id)!.isDefault).toBe(true);
+  });
+
+  it('locks the owning user row before changing the default', async () => {
+    const executeRaw = (prisma as unknown as { executeRaw: jest.Mock }).executeRaw;
+    await service.create(alice, basePayload);
+    expect(executeRaw).not.toHaveBeenCalled();
+
+    await service.create(alice, { ...basePayload, isDefault: true });
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+    const [sql, userId] = executeRaw.mock.calls[0] as [TemplateStringsArray, string];
+    expect(sql.join('?')).toMatch(/FROM users WHERE id = \?::uuid FOR UPDATE/);
+    expect(userId).toBe(alice.userId);
   });
 
   it('updating a non-owned address throws NotFoundError', async () => {
@@ -173,8 +193,6 @@ describe('AddressService', () => {
     const created = await service.create(alice, basePayload);
     const got = await service.get(alice, { addressId: created.id });
     expect(got.id).toBe(created.id);
-    await expect(service.get(bob, { addressId: created.id })).rejects.toBeInstanceOf(
-      NotFoundError,
-    );
+    await expect(service.get(bob, { addressId: created.id })).rejects.toBeInstanceOf(NotFoundError);
   });
 });

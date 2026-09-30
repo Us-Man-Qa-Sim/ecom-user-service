@@ -4,16 +4,16 @@ User management microservice for the ecom platform. Exposes a **gRPC** API on `:
 
 ## Responsibilities
 
-- User registration (argon2 password hashing) — *USR-4*
-- Authentication: RS256 access + rotating refresh tokens — *USR-5*
-- Address CRUD (per-user, with default address) — *USR-6*
-- Admin seed script — *USR-7*
-- Publishes `user.registered` events via transactional outbox to Kafka — *USR-4 / USR-8*
-- Maps domain errors to gRPC status codes via a global filter — *USR-9*
+- User registration (argon2 password hashing) — _USR-4_
+- Authentication: RS256 access + rotating refresh tokens — _USR-5_
+- Address CRUD (per-user, with default address) — _USR-6_
+- Admin seed script — _USR-7_
+- Publishes `user.registered` events via transactional outbox to Kafka — _USR-4 / USR-8_
+- Maps domain errors to gRPC status codes via a global filter — _USR-9_
 
 ## Status
 
-`USR-1` **done** — NestJS gRPC microservice scaffold, Prisma bootstrap, Dockerfile. All RPCs return `UNIMPLEMENTED`; models, migrations and business logic land in `USR-2` onward.
+Phase 3 (`USR-1` → `USR-10`) **done** — every RPC in `ecom.user.v1.UserService` is implemented, migrations run on container start, `user.registered` is published through the outbox relay, and the image has a Docker `HEALTHCHECK` against `/health`.
 
 ## Prerequisites
 
@@ -48,16 +48,16 @@ docker compose --profile app up -d --build user-service
 
 ## Scripts
 
-| Script | Purpose |
-|---|---|
-| `npm run build` | Compile TypeScript to `dist/` (runs `prisma generate` first) |
-| `npm run start` | Run `dist/main.js` |
-| `npm run start:dev` | Watch-free ts-node runner |
-| `npm run prisma:migrate:dev` | Create + apply a new migration locally |
-| `npm run prisma:migrate:deploy` | Apply pending migrations (used in container start, USR-3) |
-| `npm run seed:admin` | Idempotent admin bootstrap (USR-7) — see below |
-| `npm run lint` / `format` | ESLint / Prettier |
-| `npm test` | Jest unit tests |
+| Script                          | Purpose                                                      |
+| ------------------------------- | ------------------------------------------------------------ |
+| `npm run build`                 | Compile TypeScript to `dist/` (runs `prisma generate` first) |
+| `npm run start`                 | Run `dist/main.js`                                           |
+| `npm run start:dev`             | Watch-free ts-node runner                                    |
+| `npm run prisma:migrate:dev`    | Create + apply a new migration locally                       |
+| `npm run prisma:migrate:deploy` | Apply pending migrations (used in container start, USR-3)    |
+| `npm run seed:admin`            | Idempotent admin bootstrap (USR-7) — see below               |
+| `npm run lint` / `format`       | ESLint / Prettier                                            |
+| `npm test`                      | Jest unit tests                                              |
 
 ## Admin seed (USR-7)
 
@@ -71,11 +71,11 @@ npm run seed:admin
 
 Behaviour is idempotent and non-destructive:
 
-| Existing row | Result |
-|---|---|
-| none | creates the user with `role=ADMIN` |
+| Existing row                  | Result                              |
+| ----------------------------- | ----------------------------------- |
+| none                          | creates the user with `role=ADMIN`  |
 | `role=CUSTOMER` on same email | promotes to `ADMIN`, keeps password |
-| `role=ADMIN` already | no-op |
+| `role=ADMIN` already          | no-op                               |
 
 The script never overwrites an existing password and never emits the `user.registered` outbox event — this is out-of-band bootstrap, not a real registration.
 
@@ -83,17 +83,17 @@ The script never overwrites an existing password and never emits the `user.regis
 
 See `.env.example` for the full list. Notable variables:
 
-| Variable | Default | Notes |
-|---|---|---|
-| `GRPC_PORT` | `5001` | Advertised as `user-service:5001` inside the compose network |
-| `HTTP_PORT` | `8081` | Health only; not published to the host |
-| `DATABASE_URL` | `postgresql://user_svc:changeme@localhost:5432/user_db?schema=public` | Matches `infra/.env` |
-| `KAFKA_BROKERS` | `localhost:9092` | Producer target for the outbox relay |
-| `KAFKA_CLIENT_ID` | `user-service` | Advertised to the broker for metrics/logs |
-| `OUTBOX_RELAY_ENABLED` | `true` | Set `false` in seed/admin one-off containers |
-| `OUTBOX_RELAY_POLL_INTERVAL_MS` | `250` | Delay between drain passes when the queue is quiet |
-| `OUTBOX_RELAY_BATCH_SIZE` | `32` | Rows claimed per transaction (short lock windows) |
-| `OUTBOX_RELAY_ERROR_BACKOFF_MS` | `5000` | Wait after a failed tick before retrying |
+| Variable                        | Default                                                               | Notes                                                        |
+| ------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `GRPC_PORT`                     | `5001`                                                                | Advertised as `user-service:5001` inside the compose network |
+| `HTTP_PORT`                     | `8081`                                                                | Health only; not published to the host                       |
+| `DATABASE_URL`                  | `postgresql://user_svc:changeme@localhost:5432/user_db?schema=public` | Matches `infra/.env`                                         |
+| `KAFKA_BROKERS`                 | `localhost:9092`                                                      | Producer target for the outbox relay                         |
+| `KAFKA_CLIENT_ID`               | `user-service`                                                        | Advertised to the broker for metrics/logs                    |
+| `OUTBOX_RELAY_ENABLED`          | `true`                                                                | Set `false` in seed/admin one-off containers                 |
+| `OUTBOX_RELAY_POLL_INTERVAL_MS` | `250`                                                                 | Delay between drain passes when the queue is quiet           |
+| `OUTBOX_RELAY_BATCH_SIZE`       | `32`                                                                  | Rows claimed per transaction (short lock windows)            |
+| `OUTBOX_RELAY_ERROR_BACKOFF_MS` | `5000`                                                                | Wait after a failed tick before retrying                     |
 
 ## Outbox relay (USR-8)
 
@@ -112,4 +112,4 @@ publishes each row's envelope through the `Publisher` interface (Kafka producer 
 
 ## Error mapping (USR-9)
 
-Services throw transport-neutral `DomainError` subclasses (`ValidationError`, `NotFoundError`, `ConflictError`, `PermissionDeniedError`, `UnauthenticatedError`, `FailedPreconditionError`). The global `GrpcExceptionFilter` (registered in `AppModule` via `APP_FILTER`) maps them to gRPC status codes, translates Prisma `P2002/P2025/P2003` and `ZodError` on the fly, and returns a scrubbed `INTERNAL` for anything unknown so ORM/DB text never reaches the caller.
+Services throw transport-neutral `DomainError` subclasses (`ValidationError`, `NotFoundError`, `ConflictError`, `PermissionDeniedError`, `UnauthenticatedError`, `FailedPreconditionError`). `GrpcExceptionFilter` (bound to the gRPC `UserController` with `@UseFilters` — deliberately not global, so HTTP `/health` keeps Nest's default error handling and returns 503 instead of hanging) maps them to gRPC status codes, translates Prisma `P2002/P2025/P2003/P2034` and `ZodError` on the fly, and returns a scrubbed `INTERNAL` for anything unknown so ORM/DB text never reaches the caller.

@@ -94,9 +94,18 @@ describe('GrpcExceptionFilter', () => {
     expect(result.getError()).toMatchObject({ code: GrpcStatus.FAILED_PRECONDITION });
   });
 
-  it('maps an unmapped Prisma code to INTERNAL with a scrubbed message', async () => {
-    const err = new Prisma.PrismaClientKnownRequestError('deadlock', {
+  it('maps Prisma P2034 (serialization conflict) to ABORTED', async () => {
+    const err = new Prisma.PrismaClientKnownRequestError('write conflict', {
       code: 'P2034',
+      clientVersion: 'test',
+    });
+    const result = await runFilter(err);
+    expect(result.getError()).toMatchObject({ code: GrpcStatus.ABORTED });
+  });
+
+  it('maps an unmapped Prisma code to INTERNAL with a scrubbed message', async () => {
+    const err = new Prisma.PrismaClientKnownRequestError('pool timeout', {
+      code: 'P2024',
       clientVersion: 'test',
     });
     const result = await runFilter(err);

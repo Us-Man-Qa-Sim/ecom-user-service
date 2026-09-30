@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { Env } from '../config/env.validation';
@@ -16,7 +16,7 @@ import { OutboundMessage, Publisher } from './publisher';
 // KFK-1 will formalise the wrapper further (consumer side, envelope validation,
 // header propagation); this is the producer half needed by USR-8.
 @Injectable()
-export class KafkaProducerService implements OnModuleInit, OnModuleDestroy, Publisher {
+export class KafkaProducerService implements OnModuleInit, OnApplicationShutdown, Publisher {
   private readonly logger = new Logger(KafkaProducerService.name);
   private readonly kafka: KafkaJS.Kafka;
   private producer?: KafkaJS.Producer;
@@ -43,7 +43,9 @@ export class KafkaProducerService implements OnModuleInit, OnModuleDestroy, Publ
     this.logger.log('Kafka producer connected');
   }
 
-  async onModuleDestroy(): Promise<void> {
+  // onApplicationShutdown, not onModuleDestroy: the outbox relay drains its
+  // last tick in onModuleDestroy and needs the producer until then.
+  async onApplicationShutdown(): Promise<void> {
     if (this.producer && this.connected) {
       try {
         await this.producer.flush({ timeout: 5_000 });

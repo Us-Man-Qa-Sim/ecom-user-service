@@ -1,9 +1,6 @@
 import type { Metadata } from '@grpc/grpc-js';
 import { Role as PrismaRole } from '@prisma/client';
-import {
-  PermissionDeniedError,
-  UnauthenticatedError,
-} from '../common/errors/domain-errors';
+import { PermissionDeniedError, UnauthenticatedError } from '../common/errors/domain-errors';
 
 export interface Identity {
   userId: string;

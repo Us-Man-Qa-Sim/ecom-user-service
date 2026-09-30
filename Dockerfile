@@ -44,6 +44,11 @@ USER app
 
 EXPOSE 5001 8081
 
+# /health pings Postgres via Prisma. busybox wget ships with alpine, so no
+# extra package is needed. start-period covers `prisma migrate deploy`.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -q -O /dev/null "http://127.0.0.1:${HTTP_PORT:-8081}/health" || exit 1
+
 # USR-3: entrypoint applies pending migrations (`prisma migrate deploy`) then
 # execs the app so Node receives signals directly.
 ENTRYPOINT ["./docker-entrypoint.sh"]

@@ -3,14 +3,14 @@ import { RpcException } from '@nestjs/microservices';
 import { status as GrpcStatus } from '@grpc/grpc-js';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
-import {
-  DomainError,
-  DomainErrorKind,
-} from './domain-errors';
+import { DomainError, DomainErrorKind } from './domain-errors';
 import { throwError, Observable } from 'rxjs';
 
 // USR-9: single edge that turns whatever the domain throws into a gRPC status
-// the gateway can act on. Registered globally in AppModule via APP_FILTER.
+// the gateway can act on. Bound to the gRPC controller with @UseFilters, NOT
+// globally via APP_FILTER: this is a hybrid app, and a global catch-all filter
+// would also swallow HTTP exceptions on /health — it returns an Observable the
+// Express adapter ignores, so the request would hang instead of returning 503.
 //
 // Mapping table (this file is the single source of truth):
 //   RpcException                        → passthrough (already carries its code)
@@ -19,6 +19,7 @@ import { throwError, Observable } from 'rxjs';
 //   Prisma P2002 (unique)               → ALREADY_EXISTS
 //   Prisma P2025 (record not found)     → NOT_FOUND
 //   Prisma P2003 (fk violation)         → FAILED_PRECONDITION
+//   Prisma P2034 (write conflict)       → ABORTED (safe for the caller to retry)
 //   anything else                       → INTERNAL, message scrubbed, logged
 //
 // Untyped errors get a generic public message ("Internal server error") so we
@@ -96,6 +97,13 @@ export class GrpcExceptionFilter implements RpcExceptionFilter {
         return new RpcException({
           code: GrpcStatus.FAILED_PRECONDITION,
           message: 'Foreign key constraint violated',
+        });
+      case 'P2034':
+        // Serialization failure / deadlock — e.g. two concurrent refreshes of
+        // the same token under the Serializable tx in AuthService.refresh.
+        return new RpcException({
+          code: GrpcStatus.ABORTED,
+          message: 'Concurrent modification; retry the request',
         });
       default:
         this.logger.error(

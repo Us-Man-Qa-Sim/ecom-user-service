@@ -7,8 +7,9 @@
 //      TS5011 ("common source directory") does not fire when the seed module
 //      imports a sibling under src/ (base tsconfig.json intentionally has no
 //      rootDir so tsc/build and lint/test can each set their own).
-//   3. Requires the TypeScript entry, which self-invokes `main()` when run as
-//      the program entry point.
+//   3. Requires the TypeScript entry and calls its exported `main()`. (The
+//      entry only self-invokes when it is the program entry point, i.e. the
+//      compiled `node dist/seed/seed-admin.js` path used inside the container.)
 
 try {
   process.loadEnvFile('.env');
@@ -23,7 +24,6 @@ require('ts-node').register({
 
 const { main } = require('../src/seed/seed-admin');
 main().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error('[seed-admin] failed:', err instanceof Error ? err.message : err);
   process.exit(1);
 });

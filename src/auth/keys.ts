@@ -1,4 +1,10 @@
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, KeyObject } from 'node:crypto';
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  KeyObject,
+} from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Logger } from '@nestjs/common';
 
@@ -29,9 +35,7 @@ export function loadKeyMaterial(
   }
 
   if (privateKeyPath || publicKeyPath) {
-    throw new Error(
-      'JWT_PRIVATE_KEY_PATH and JWT_PUBLIC_KEY_PATH must be set together',
-    );
+    throw new Error('JWT_PRIVATE_KEY_PATH and JWT_PUBLIC_KEY_PATH must be set together');
   }
 
   logger.warn(
