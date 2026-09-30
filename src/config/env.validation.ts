@@ -28,6 +28,19 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
 
   KAFKA_BROKERS: z.string().default('localhost:9092'),
+  KAFKA_CLIENT_ID: z.string().default('user-service'),
+
+  // Outbox relay knobs. Disabling is useful in tests and in one-off admin
+  // containers that share the codebase but should not publish. Defaults are
+  // conservative — 250 ms polling and batches of 32 keep transactions short so
+  // FOR UPDATE SKIP LOCKED locks are released quickly.
+  OUTBOX_RELAY_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  OUTBOX_RELAY_POLL_INTERVAL_MS: numericString(250),
+  OUTBOX_RELAY_BATCH_SIZE: numericString(32),
+  OUTBOX_RELAY_ERROR_BACKOFF_MS: numericString(5_000),
 
   JWT_PRIVATE_KEY_PATH: z.string().optional(),
   JWT_PUBLIC_KEY_PATH: z.string().optional(),

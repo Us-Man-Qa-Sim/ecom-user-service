@@ -7,7 +7,9 @@ User management microservice for the ecom platform. Exposes a **gRPC** API on `:
 - User registration (argon2 password hashing) — *USR-4*
 - Authentication: RS256 access + rotating refresh tokens — *USR-5*
 - Address CRUD (per-user, with default address) — *USR-6*
+- Admin seed script — *USR-7*
 - Publishes `user.registered` events via transactional outbox to Kafka — *USR-4 / USR-8*
+- Maps domain errors to gRPC status codes via a global filter — *USR-9*
 
 ## Status
 
@@ -86,4 +88,28 @@ See `.env.example` for the full list. Notable variables:
 | `GRPC_PORT` | `5001` | Advertised as `user-service:5001` inside the compose network |
 | `HTTP_PORT` | `8081` | Health only; not published to the host |
 | `DATABASE_URL` | `postgresql://user_svc:changeme@localhost:5432/user_db?schema=public` | Matches `infra/.env` |
-| `KAFKA_BROKERS` | `localhost:9092` | Wired in `USR-4` (outbox) |
+| `KAFKA_BROKERS` | `localhost:9092` | Producer target for the outbox relay |
+| `KAFKA_CLIENT_ID` | `user-service` | Advertised to the broker for metrics/logs |
+| `OUTBOX_RELAY_ENABLED` | `true` | Set `false` in seed/admin one-off containers |
+| `OUTBOX_RELAY_POLL_INTERVAL_MS` | `250` | Delay between drain passes when the queue is quiet |
+| `OUTBOX_RELAY_BATCH_SIZE` | `32` | Rows claimed per transaction (short lock windows) |
+| `OUTBOX_RELAY_ERROR_BACKOFF_MS` | `5000` | Wait after a failed tick before retrying |
+
+## Outbox relay (USR-8)
+
+The relay lives in `src/outbox/outbox-relay.service.ts` and runs as an in-process scheduled loop. On each tick it opens a single Prisma transaction, runs
+
+```sql
+SELECT id, aggregate_id, event_type, payload, created_at
+  FROM outbox
+ WHERE sent_at IS NULL
+ ORDER BY created_at
+ LIMIT $batch
+ FOR UPDATE SKIP LOCKED
+```
+
+publishes each row's envelope through the `Publisher` interface (Kafka producer with `idempotent=true`, `acks=all`), then marks the rows sent and commits. `SKIP LOCKED` means multiple pods can run the relay safely; if a publish fails the transaction rolls back and the row is picked up on the next pass (at-least-once — consumers dedupe on `eventId` via `processed_events`, per KFK plan). Reusable pattern — copy the file plus `src/kafka/publisher.ts` into order-service unchanged.
+
+## Error mapping (USR-9)
+
+Services throw transport-neutral `DomainError` subclasses (`ValidationError`, `NotFoundError`, `ConflictError`, `PermissionDeniedError`, `UnauthenticatedError`, `FailedPreconditionError`). The global `GrpcExceptionFilter` (registered in `AppModule` via `APP_FILTER`) maps them to gRPC status codes, translates Prisma `P2002/P2025/P2003` and `ZodError` on the fly, and returns a scrubbed `INTERNAL` for anything unknown so ORM/DB text never reaches the caller.

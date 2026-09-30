@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { RpcException } from '@nestjs/microservices';
-import { status as GrpcStatus } from '@grpc/grpc-js';
 import { Address as PrismaAddress, Prisma } from '@prisma/client';
 import type { ZodType } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { Identity } from '../identity/identity.util';
+import { NotFoundError, ValidationError } from '../common/errors/domain-errors';
 import {
   AddressIdSchema,
   CreateAddressInputSchema,
@@ -83,12 +82,12 @@ export class AddressService {
   ): Promise<PrismaAddress> {
     const address = await client.address.findUnique({ where: { id: addressId } });
     if (!address) {
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: 'Address not found' });
+      throw new NotFoundError('Address not found');
     }
     // Ownership is a NOT_FOUND, not PERMISSION_DENIED: leaking "this ID exists
     // but isn't yours" would let a probe map another user's address IDs.
     if (address.userId !== identity.userId) {
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: 'Address not found' });
+      throw new NotFoundError('Address not found');
     }
     return address;
   }
@@ -127,10 +126,7 @@ function parse<T>(schema: ZodType<T>, raw: unknown, rpc: string): T {
     const message = parsed.error.issues
       .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
       .join('; ');
-    throw new RpcException({
-      code: GrpcStatus.INVALID_ARGUMENT,
-      message: `Invalid ${rpc} request: ${message}`,
-    });
+    throw new ValidationError(`Invalid ${rpc} request: ${message}`);
   }
   return parsed.data;
 }

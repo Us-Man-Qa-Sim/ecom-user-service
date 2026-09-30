@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { status as GrpcStatus } from '@grpc/grpc-js';
 import { RefreshToken, Role, User } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { AuthService } from '../src/auth/auth.service';
 import { hashRefreshToken, JwtService } from '../src/auth/jwt.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import {
+  UnauthenticatedError,
+  ValidationError,
+} from '../src/common/errors/domain-errors';
 
 interface RefreshRow extends RefreshToken {
   user?: User;
@@ -140,17 +143,17 @@ describe('AuthService', () => {
   });
 
   describe('login', () => {
-    it('rejects unknown email with UNAUTHENTICATED', async () => {
+    it('rejects unknown email with UnauthenticatedError', async () => {
       await expect(
         auth.login({ email: 'nobody@example.com', password: 'irrelevant' }),
-      ).rejects.toMatchObject({ error: { code: GrpcStatus.UNAUTHENTICATED } });
+      ).rejects.toBeInstanceOf(UnauthenticatedError);
     });
 
-    it('rejects a wrong password with UNAUTHENTICATED', async () => {
+    it('rejects a wrong password with UnauthenticatedError', async () => {
       await seededUser(store, 'correct-horse-battery-staple');
       await expect(
         auth.login({ email: 'alice@example.com', password: 'wrong' }),
-      ).rejects.toMatchObject({ error: { code: GrpcStatus.UNAUTHENTICATED } });
+      ).rejects.toBeInstanceOf(UnauthenticatedError);
     });
 
     it('issues access + refresh tokens on success', async () => {
@@ -168,10 +171,10 @@ describe('AuthService', () => {
       expect(row.revokedAt).toBeNull();
     });
 
-    it('rejects a malformed request with INVALID_ARGUMENT', async () => {
-      await expect(auth.login({ email: 'not-email', password: 'x' })).rejects.toMatchObject({
-        error: { code: GrpcStatus.INVALID_ARGUMENT },
-      });
+    it('rejects a malformed request with ValidationError', async () => {
+      await expect(auth.login({ email: 'not-email', password: 'x' })).rejects.toBeInstanceOf(
+        ValidationError,
+      );
     });
   });
 
@@ -199,9 +202,9 @@ describe('AuthService', () => {
       const refreshed = await auth.refresh({ refreshToken: oldToken });
 
       // Replay the already-rotated token → reuse detection.
-      await expect(auth.refresh({ refreshToken: oldToken })).rejects.toMatchObject({
-        error: { code: GrpcStatus.UNAUTHENTICATED },
-      });
+      await expect(auth.refresh({ refreshToken: oldToken })).rejects.toBeInstanceOf(
+        UnauthenticatedError,
+      );
 
       // Every row in the family, including the one issued by refresh, is revoked.
       for (const row of store.refreshes.values()) {
@@ -210,13 +213,13 @@ describe('AuthService', () => {
       // And the "new" token can no longer be used either.
       await expect(
         auth.refresh({ refreshToken: refreshed.tokens.refresh.token }),
-      ).rejects.toMatchObject({ error: { code: GrpcStatus.UNAUTHENTICATED } });
+      ).rejects.toBeInstanceOf(UnauthenticatedError);
     });
 
     it('rejects an unknown refresh token', async () => {
-      await expect(auth.refresh({ refreshToken: 'not-a-known-token' })).rejects.toMatchObject({
-        error: { code: GrpcStatus.UNAUTHENTICATED },
-      });
+      await expect(auth.refresh({ refreshToken: 'not-a-known-token' })).rejects.toBeInstanceOf(
+        UnauthenticatedError,
+      );
     });
 
     it('rejects an expired refresh token', async () => {
@@ -235,9 +238,9 @@ describe('AuthService', () => {
       store.refreshes.set(row.id, row);
       store.refreshesByHash.set(row.tokenHash, row);
 
-      await expect(auth.refresh({ refreshToken: token })).rejects.toMatchObject({
-        error: { code: GrpcStatus.UNAUTHENTICATED },
-      });
+      await expect(auth.refresh({ refreshToken: token })).rejects.toBeInstanceOf(
+        UnauthenticatedError,
+      );
     });
   });
 
@@ -255,9 +258,7 @@ describe('AuthService', () => {
     });
 
     it('rejects a malformed request', async () => {
-      await expect(auth.logout({ refreshToken: '' })).rejects.toMatchObject({
-        error: { code: GrpcStatus.INVALID_ARGUMENT },
-      });
+      await expect(auth.logout({ refreshToken: '' })).rejects.toBeInstanceOf(ValidationError);
     });
   });
 });

@@ -1,7 +1,9 @@
 import type { Metadata } from '@grpc/grpc-js';
-import { RpcException } from '@nestjs/microservices';
-import { status as GrpcStatus } from '@grpc/grpc-js';
 import { Role as PrismaRole } from '@prisma/client';
+import {
+  PermissionDeniedError,
+  UnauthenticatedError,
+} from '../common/errors/domain-errors';
 
 export interface Identity {
   userId: string;
@@ -29,18 +31,12 @@ export function readIdentity(metadata: Metadata | undefined): Identity {
   const roleRaw = firstValue(metadata, HEADER_USER_ROLE);
 
   if (!userId || !roleRaw) {
-    throw new RpcException({
-      code: GrpcStatus.UNAUTHENTICATED,
-      message: 'Missing identity metadata',
-    });
+    throw new UnauthenticatedError('Missing identity metadata');
   }
 
   const role = normaliseRole(roleRaw);
   if (!role) {
-    throw new RpcException({
-      code: GrpcStatus.UNAUTHENTICATED,
-      message: `Unknown role: ${roleRaw}`,
-    });
+    throw new UnauthenticatedError(`Unknown role: ${roleRaw}`);
   }
 
   return {
@@ -61,9 +57,6 @@ function normaliseRole(value: string): PrismaRole | undefined {
 
 export function requireAdmin(identity: Identity): void {
   if (identity.role !== PrismaRole.ADMIN) {
-    throw new RpcException({
-      code: GrpcStatus.PERMISSION_DENIED,
-      message: 'Admin role required',
-    });
+    throw new PermissionDeniedError('Admin role required');
   }
 }

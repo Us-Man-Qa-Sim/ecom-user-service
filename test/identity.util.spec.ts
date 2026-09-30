@@ -1,7 +1,10 @@
 import { Metadata } from '@grpc/grpc-js';
-import { status as GrpcStatus } from '@grpc/grpc-js';
 import { Role } from '@prisma/client';
 import { readIdentity, requireAdmin } from '../src/identity/identity.util';
+import {
+  PermissionDeniedError,
+  UnauthenticatedError,
+} from '../src/common/errors/domain-errors';
 
 function md(entries: Record<string, string>): Metadata {
   const meta = new Metadata();
@@ -32,15 +35,13 @@ describe('readIdentity', () => {
     ['no metadata at all', undefined as unknown as Metadata],
     ['missing x-user-id', md({ 'x-user-role': 'CUSTOMER' })],
     ['missing x-user-role', md({ 'x-user-id': 'user-1' })],
-  ])('rejects %s with UNAUTHENTICATED', (_label, meta) => {
-    expect(() => readIdentity(meta)).toThrow(
-      expect.objectContaining({ error: expect.objectContaining({ code: GrpcStatus.UNAUTHENTICATED }) }),
-    );
+  ])('rejects %s with UnauthenticatedError', (_label, meta) => {
+    expect(() => readIdentity(meta)).toThrow(UnauthenticatedError);
   });
 
-  it('rejects an unknown role', () => {
+  it('rejects an unknown role with UnauthenticatedError', () => {
     expect(() => readIdentity(md({ 'x-user-id': 'u', 'x-user-role': 'SUPERUSER' }))).toThrow(
-      expect.objectContaining({ error: expect.objectContaining({ code: GrpcStatus.UNAUTHENTICATED }) }),
+      UnauthenticatedError,
     );
   });
 });
@@ -50,9 +51,9 @@ describe('requireAdmin', () => {
     expect(() => requireAdmin({ userId: 'u', role: Role.ADMIN })).not.toThrow();
   });
 
-  it('rejects a customer with PERMISSION_DENIED', () => {
+  it('rejects a customer with PermissionDeniedError', () => {
     expect(() => requireAdmin({ userId: 'u', role: Role.CUSTOMER })).toThrow(
-      expect.objectContaining({ error: expect.objectContaining({ code: GrpcStatus.PERMISSION_DENIED }) }),
+      PermissionDeniedError,
     );
   });
 });

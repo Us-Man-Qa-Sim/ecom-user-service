@@ -1,17 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { RpcException } from '@nestjs/microservices';
-import { status as GrpcStatus } from '@grpc/grpc-js';
-import { Prisma, User as PrismaUser } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
+import { User as PrismaUser } from '@prisma/client';
 import { TOPICS } from '@us-man-qa-sim/ecom-contracts/events';
 import { PrismaService } from '../prisma/prisma.service';
 import { OutboxService } from '../outbox/outbox.service';
+import { NotFoundError, ValidationError } from '../common/errors/domain-errors';
 import { RegisterInput, RegisterInputSchema } from './dto/register.dto';
 import { hashPassword } from './password.util';
 
 @Injectable()
 export class UserService {
-  private readonly logger = new Logger(UserService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
@@ -20,10 +17,7 @@ export class UserService {
   async getById(userId: string): Promise<PrismaUser> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
-      throw new RpcException({
-        code: GrpcStatus.NOT_FOUND,
-        message: 'User not found',
-      });
+      throw new NotFoundError('User not found');
     }
     return user;
   }
@@ -32,44 +26,35 @@ export class UserService {
     const input = this.parseRegisterInput(raw);
     const passwordHash = await hashPassword(input.password);
 
-    try {
-      // User row + outbox row commit atomically. Losing the outbox insert would
-      // silently drop `user.registered`; committing without the user row would
-      // publish a phantom event. One transaction rules out both.
-      return await this.prisma.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: {
-            email: input.email,
-            passwordHash,
-            firstName: input.firstName,
-            lastName: input.lastName,
-          },
-        });
-
-        await this.outbox.enqueue(tx, {
-          aggregateType: 'User',
-          aggregateId: user.id,
-          topic: TOPICS.USER_REGISTERED,
-          payload: {
-            userId: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-          },
-        });
-
-        return user;
+    // User row + outbox row commit atomically. Losing the outbox insert would
+    // silently drop `user.registered`; committing without the user row would
+    // publish a phantom event. One transaction rules out both. A duplicate
+    // email surfaces as Prisma P2002, which the global GrpcExceptionFilter
+    // maps to ALREADY_EXISTS — no service-level catch needed here.
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: input.email,
+          passwordHash,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
       });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new RpcException({
-          code: GrpcStatus.ALREADY_EXISTS,
-          message: 'A user with this email already exists',
-        });
-      }
-      this.logger.error({ err }, 'Failed to register user');
-      throw err;
-    }
+
+      await this.outbox.enqueue(tx, {
+        aggregateType: 'User',
+        aggregateId: user.id,
+        topic: TOPICS.USER_REGISTERED,
+        payload: {
+          userId: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        },
+      });
+
+      return user;
+    });
   }
 
   private parseRegisterInput(raw: unknown): RegisterInput {
@@ -78,10 +63,7 @@ export class UserService {
       const message = parsed.error.issues
         .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
         .join('; ');
-      throw new RpcException({
-        code: GrpcStatus.INVALID_ARGUMENT,
-        message: `Invalid Register request: ${message}`,
-      });
+      throw new ValidationError(`Invalid Register request: ${message}`);
     }
     return parsed.data;
   }

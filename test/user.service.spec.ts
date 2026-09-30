@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { RpcException } from '@nestjs/microservices';
-import { status as GrpcStatus } from '@grpc/grpc-js';
 import { Prisma, Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { TOPICS } from '@us-man-qa-sim/ecom-contracts/events';
 import { UserService } from '../src/user/user.service';
 import { OutboxService } from '../src/outbox/outbox.service';
+import { ValidationError } from '../src/common/errors/domain-errors';
 import type { PrismaService } from '../src/prisma/prisma.service';
 
 interface CreatedUserRow {
@@ -58,10 +57,10 @@ describe('UserService.register', () => {
     service = new UserService(prisma.service, outbox);
   });
 
-  it('rejects a bad payload with INVALID_ARGUMENT', async () => {
-    await expect(service.register({ email: 'nope', password: 'short' })).rejects.toMatchObject({
-      error: { code: GrpcStatus.INVALID_ARGUMENT },
-    });
+  it('rejects a bad payload with ValidationError', async () => {
+    await expect(service.register({ email: 'nope', password: 'short' })).rejects.toBeInstanceOf(
+      ValidationError,
+    );
     expect(prisma.transaction).not.toHaveBeenCalled();
   });
 
@@ -105,7 +104,7 @@ describe('UserService.register', () => {
     });
   });
 
-  it('maps a duplicate-email violation to ALREADY_EXISTS', async () => {
+  it('propagates a Prisma P2002 unchanged (the global filter maps it to ALREADY_EXISTS)', async () => {
     const { tx, create } = makeTx();
     create.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('unique', {
@@ -116,9 +115,10 @@ describe('UserService.register', () => {
     );
     prisma.transaction.mockImplementation(async (fn) => fn(tx));
 
-    await expect(service.register(validInput)).rejects.toBeInstanceOf(RpcException);
-    await expect(service.register(validInput)).rejects.toMatchObject({
-      error: { code: GrpcStatus.ALREADY_EXISTS },
-    });
+    // USR-9: the service no longer wraps Prisma errors — GrpcExceptionFilter does.
+    // The service test asserts only that the Prisma error propagates untouched.
+    await expect(service.register(validInput)).rejects.toBeInstanceOf(
+      Prisma.PrismaClientKnownRequestError,
+    );
   });
 });

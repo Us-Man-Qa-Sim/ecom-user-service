@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
+import { GrpcExceptionFilter } from './common/errors/grpc-exception.filter';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { KafkaModule } from './kafka/kafka.module';
 import { OutboxModule } from './outbox/outbox.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UserModule } from './user/user.module';
@@ -27,9 +30,17 @@ import { UserModule } from './user/user.module';
       }),
     }),
     PrismaModule,
+    KafkaModule,
     OutboxModule,
     HealthModule,
     UserModule,
+  ],
+  providers: [
+    // Registered globally so every gRPC controller handler runs through this
+    // filter. Domain code throws transport-neutral errors (see
+    // src/common/errors/domain-errors.ts); the filter is the only place that
+    // knows about gRPC status codes.
+    { provide: APP_FILTER, useClass: GrpcExceptionFilter },
   ],
 })
 export class AppModule {}

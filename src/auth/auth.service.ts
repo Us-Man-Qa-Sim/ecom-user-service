@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { RpcException } from '@nestjs/microservices';
-import { status as GrpcStatus } from '@grpc/grpc-js';
 import { Prisma, User as PrismaUser } from '@prisma/client';
 import * as argon2 from 'argon2';
 import type { ZodType } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  UnauthenticatedError,
+  ValidationError,
+} from '../common/errors/domain-errors';
 import { hashRefreshToken, JwtService, MintedAccessToken, MintedRefreshToken } from './jwt.service';
 import {
   LoginInputSchema,
@@ -39,7 +41,7 @@ export class AuthService {
     // Same error whether the email is unknown or the password is wrong: a
     // distinct "no such user" message would let an attacker enumerate accounts.
     if (!user || !(await argon2.verify(user.passwordHash, input.password))) {
-      throw unauthenticated('Invalid email or password');
+      throw new UnauthenticatedError('Invalid email or password');
     }
 
     const tokens = await this.issueTokens(user, randomUUID());
@@ -61,7 +63,7 @@ export class AuthService {
         });
 
         if (!existing) {
-          throw unauthenticated('Refresh token not recognised');
+          throw new UnauthenticatedError('Refresh token not recognised');
         }
 
         if (existing.revokedAt) {
@@ -77,11 +79,11 @@ export class AuthService {
             { userId: existing.userId, family: existing.family },
             'Refresh token reuse detected; revoking family',
           );
-          throw unauthenticated('Refresh token reuse detected');
+          throw new UnauthenticatedError('Refresh token reuse detected');
         }
 
         if (existing.expiresAt.getTime() <= Date.now()) {
-          throw unauthenticated('Refresh token expired');
+          throw new UnauthenticatedError('Refresh token expired');
         }
 
         await tx.refreshToken.update({
@@ -140,14 +142,7 @@ function parseInput<T>(schema: ZodType<T>, raw: unknown, rpc: string): T {
     const message = parsed.error.issues
       .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
       .join('; ');
-    throw new RpcException({
-      code: GrpcStatus.INVALID_ARGUMENT,
-      message: `Invalid ${rpc} request: ${message}`,
-    });
+    throw new ValidationError(`Invalid ${rpc} request: ${message}`);
   }
   return parsed.data;
-}
-
-function unauthenticated(message: string): RpcException {
-  return new RpcException({ code: GrpcStatus.UNAUTHENTICATED, message });
 }

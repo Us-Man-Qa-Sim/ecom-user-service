@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { status as GrpcStatus } from '@grpc/grpc-js';
 import { Address, Role } from '@prisma/client';
 import { AddressService } from '../src/address/address.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import type { Identity } from '../src/identity/identity.util';
+import { NotFoundError, ValidationError } from '../src/common/errors/domain-errors';
 
 function makeStore() {
   const rows = new Map<string, Address>();
@@ -110,10 +110,10 @@ describe('AddressService', () => {
     expect(created.isDefault).toBe(false);
   });
 
-  it('rejects a payload missing required fields with INVALID_ARGUMENT', async () => {
-    await expect(service.create(alice, { street: '', city: '', country: 'us', postalCode: '' })).rejects.toMatchObject(
-      { error: { code: GrpcStatus.INVALID_ARGUMENT } },
-    );
+  it('rejects a payload missing required fields with ValidationError', async () => {
+    await expect(
+      service.create(alice, { street: '', city: '', country: 'us', postalCode: '' }),
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 
   it('creating a default un-defaults the previous default', async () => {
@@ -123,24 +123,24 @@ describe('AddressService', () => {
     expect(store.rows.get(second.id)!.isDefault).toBe(true);
   });
 
-  it('updating a non-owned address returns NOT_FOUND', async () => {
+  it('updating a non-owned address throws NotFoundError', async () => {
     const alicesAddress = await service.create(alice, basePayload);
     await expect(
       service.update(bob, { addressId: alicesAddress.id, street: 'evil' }),
-    ).rejects.toMatchObject({ error: { code: GrpcStatus.NOT_FOUND } });
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('updating a missing address returns NOT_FOUND', async () => {
+  it('updating a missing address throws NotFoundError', async () => {
     await expect(
       service.update(alice, { addressId: randomUUID(), street: 'x' }),
-    ).rejects.toMatchObject({ error: { code: GrpcStatus.NOT_FOUND } });
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it('rejects an update with no fields to change', async () => {
     const created = await service.create(alice, basePayload);
-    await expect(service.update(alice, { addressId: created.id })).rejects.toMatchObject({
-      error: { code: GrpcStatus.INVALID_ARGUMENT },
-    });
+    await expect(service.update(alice, { addressId: created.id })).rejects.toBeInstanceOf(
+      ValidationError,
+    );
   });
 
   it('marking an address default un-defaults siblings and keeps this one', async () => {
@@ -153,9 +153,9 @@ describe('AddressService', () => {
 
   it('removes only the caller-owned address', async () => {
     const created = await service.create(alice, basePayload);
-    await expect(service.remove(bob, { addressId: created.id })).rejects.toMatchObject({
-      error: { code: GrpcStatus.NOT_FOUND },
-    });
+    await expect(service.remove(bob, { addressId: created.id })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
     await service.remove(alice, { addressId: created.id });
     expect(store.rows.has(created.id)).toBe(false);
   });
@@ -169,12 +169,12 @@ describe('AddressService', () => {
     expect(list.map((r) => r.id)).toEqual([b.id, a.id]);
   });
 
-  it('get returns the caller-owned address, NOT_FOUND for others', async () => {
+  it('get returns the caller-owned address, NotFoundError for others', async () => {
     const created = await service.create(alice, basePayload);
     const got = await service.get(alice, { addressId: created.id });
     expect(got.id).toBe(created.id);
-    await expect(service.get(bob, { addressId: created.id })).rejects.toMatchObject({
-      error: { code: GrpcStatus.NOT_FOUND },
-    });
+    await expect(service.get(bob, { addressId: created.id })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });
