@@ -53,8 +53,29 @@ docker compose --profile app up -d --build user-service
 | `npm run start:dev` | Watch-free ts-node runner |
 | `npm run prisma:migrate:dev` | Create + apply a new migration locally |
 | `npm run prisma:migrate:deploy` | Apply pending migrations (used in container start, USR-3) |
+| `npm run seed:admin` | Idempotent admin bootstrap (USR-7) — see below |
 | `npm run lint` / `format` | ESLint / Prettier |
 | `npm test` | Jest unit tests |
+
+## Admin seed (USR-7)
+
+Bootstraps an `ADMIN` user so a fresh database can immediately call admin-only RPCs. Credentials come from environment variables (loaded from `.env` if present) — there is no built-in default so the script cannot accidentally create a well-known admin in production.
+
+```bash
+ADMIN_EMAIL=admin@example.com \
+ADMIN_PASSWORD='a-very-strong-passphrase' \
+npm run seed:admin
+```
+
+Behaviour is idempotent and non-destructive:
+
+| Existing row | Result |
+|---|---|
+| none | creates the user with `role=ADMIN` |
+| `role=CUSTOMER` on same email | promotes to `ADMIN`, keeps password |
+| `role=ADMIN` already | no-op |
+
+The script never overwrites an existing password and never emits the `user.registered` outbox event — this is out-of-band bootstrap, not a real registration.
 
 ## Environment
 
