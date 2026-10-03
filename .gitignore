@@ -5,3 +5,6 @@ dist/
 .env.local
 coverage/
 *.log
+
+# JWT key pairs — never commit private keys
+keys/
