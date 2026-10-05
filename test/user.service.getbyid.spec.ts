@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Role, User } from '@prisma/client';
+import { CorrelationService } from '../src/correlation/correlation.service';
 import { UserService } from '../src/user/user.service';
 import { OutboxService } from '../src/outbox/outbox.service';
 import { NotFoundError } from '../src/common/errors/domain-errors';
@@ -17,7 +18,7 @@ function makePrisma(user?: User) {
 }
 
 describe('UserService.getById', () => {
-  const outbox = new OutboxService();
+  const outbox = new OutboxService(new CorrelationService());
   const seeded: User = {
     id: randomUUID(),
     email: 'alice@example.com',

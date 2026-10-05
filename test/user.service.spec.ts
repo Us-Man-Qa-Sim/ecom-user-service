@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma, Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { TOPICS } from '@us-man-qa-sim/ecom-contracts/events';
+import { CorrelationService } from '../src/correlation/correlation.service';
 import { UserService } from '../src/user/user.service';
 import { OutboxService } from '../src/outbox/outbox.service';
 import { ValidationError } from '../src/common/errors/domain-errors';
@@ -52,7 +53,7 @@ describe('UserService.register', () => {
 
   beforeEach(() => {
     prisma = makePrisma();
-    outbox = new OutboxService();
+    outbox = new OutboxService(new CorrelationService());
     jest.spyOn(outbox, 'enqueue').mockResolvedValue(undefined);
     service = new UserService(prisma.service, outbox);
   });

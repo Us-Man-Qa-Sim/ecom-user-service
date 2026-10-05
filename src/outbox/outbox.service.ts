@@ -7,13 +7,12 @@ import {
   TopicName,
   TypedEventEnvelope,
 } from '@us-man-qa-sim/ecom-contracts/events';
+import { CorrelationService } from '../correlation/correlation.service';
 
-// Transactional outbox producer. Callers pass a Prisma TransactionClient so the
-// domain write and the outbox row commit atomically — either both land or neither
-// does, which is what gives us at-least-once publish without dual-write anomalies.
-// USR-8 will add a relay that polls unsent rows and publishes to Kafka.
 @Injectable()
 export class OutboxService {
+  constructor(private readonly correlation: CorrelationService) {}
+
   async enqueue<T extends TopicName>(
     tx: Prisma.TransactionClient,
     event: {
@@ -24,8 +23,6 @@ export class OutboxService {
       correlationId?: string;
     },
   ): Promise<void> {
-    // Payload is validated against the shared contract schema at insert time so
-    // a bad producer fails loudly here, not silently when a consumer rejects it.
     const parsedPayload = EVENT_PAYLOAD_SCHEMAS[event.topic].parse(event.payload);
 
     const envelope: TypedEventEnvelope<T> = {
@@ -33,7 +30,8 @@ export class OutboxService {
       eventType: event.topic,
       version: 1,
       occurredAt: new Date().toISOString(),
-      correlationId: event.correlationId ?? randomUUID(),
+      correlationId:
+        event.correlationId ?? this.correlation.getCorrelationId() ?? randomUUID(),
       payload: parsedPayload as EventPayloadMap[T],
     };
 

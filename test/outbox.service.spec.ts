@@ -5,6 +5,7 @@ import {
   TOPICS,
   UserRegisteredPayloadSchema,
 } from '@us-man-qa-sim/ecom-contracts/events';
+import { CorrelationService } from '../src/correlation/correlation.service';
 import { OutboxService } from '../src/outbox/outbox.service';
 
 interface OutboxRow {
@@ -23,7 +24,7 @@ function makeTx() {
 }
 
 describe('OutboxService.enqueue', () => {
-  const service = new OutboxService();
+  const service = new OutboxService(new CorrelationService());
 
   it('wraps the payload in a valid EventEnvelope', async () => {
     const { tx, create } = makeTx();
