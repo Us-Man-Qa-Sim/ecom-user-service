@@ -13,10 +13,12 @@ import {
   ValidationError,
 } from '../src/common/errors/domain-errors';
 
-// The filter returns an Observable that immediately errors. We convert with
-// firstValueFrom to await the emitted RpcException and inspect its `.error`
-// property, which is the gRPC-shaped { code, message }.
-async function runFilter(exception: unknown): Promise<RpcException> {
+// The filter returns an Observable that immediately errors with the gRPC wire
+// payload `{ code, message }` — Nest passes it to the grpc-js callback as-is.
+// We convert with firstValueFrom to await and inspect it.
+type GrpcError = { code: number; message: string };
+
+async function runFilter(exception: unknown): Promise<GrpcError> {
   const filter = new GrpcExceptionFilter();
   // ArgumentsHost is unused by the filter — a naked object satisfies TS.
   const observable = filter.catch(exception, {} as never);
@@ -24,7 +26,8 @@ async function runFilter(exception: unknown): Promise<RpcException> {
     await firstValueFrom(observable);
     throw new Error('expected filter to error');
   } catch (err) {
-    return err as RpcException;
+    if (err instanceof Error) throw err;
+    return err as GrpcError;
   }
 }
 
@@ -32,7 +35,7 @@ describe('GrpcExceptionFilter', () => {
   it('passes an existing RpcException through unchanged', async () => {
     const rpc = new RpcException({ code: GrpcStatus.CANCELLED, message: 'stop' });
     const result = await runFilter(rpc);
-    expect(result).toBe(rpc);
+    expect(result).toBe(rpc.getError());
   });
 
   it.each([
@@ -44,7 +47,7 @@ describe('GrpcExceptionFilter', () => {
     [new FailedPreconditionError('nope'), GrpcStatus.FAILED_PRECONDITION, 'nope'],
   ])('maps %p to the matching gRPC status', async (err, expectedCode, expectedMessage) => {
     const result = await runFilter(err);
-    expect(result.getError()).toMatchObject({ code: expectedCode, message: expectedMessage });
+    expect(result).toMatchObject({ code: expectedCode, message: expectedMessage });
   });
 
   it('maps a ZodError to INVALID_ARGUMENT with a joined message', async () => {
@@ -56,7 +59,7 @@ describe('GrpcExceptionFilter', () => {
       caught = e;
     }
     const result = await runFilter(caught);
-    const error = result.getError() as { code: number; message: string };
+    const error = result;
     expect(error.code).toBe(GrpcStatus.INVALID_ARGUMENT);
     expect(error.message).toMatch(/Validation failed:/);
     expect(error.message).toMatch(/email/);
@@ -70,7 +73,7 @@ describe('GrpcExceptionFilter', () => {
       meta: { target: ['email'] },
     });
     const result = await runFilter(err);
-    expect(result.getError()).toMatchObject({
+    expect(result).toMatchObject({
       code: GrpcStatus.ALREADY_EXISTS,
       message: expect.stringContaining('email'),
     });
@@ -82,7 +85,7 @@ describe('GrpcExceptionFilter', () => {
       clientVersion: 'test',
     });
     const result = await runFilter(err);
-    expect(result.getError()).toMatchObject({ code: GrpcStatus.NOT_FOUND });
+    expect(result).toMatchObject({ code: GrpcStatus.NOT_FOUND });
   });
 
   it('maps Prisma P2003 (fk) to FAILED_PRECONDITION', async () => {
@@ -91,7 +94,7 @@ describe('GrpcExceptionFilter', () => {
       clientVersion: 'test',
     });
     const result = await runFilter(err);
-    expect(result.getError()).toMatchObject({ code: GrpcStatus.FAILED_PRECONDITION });
+    expect(result).toMatchObject({ code: GrpcStatus.FAILED_PRECONDITION });
   });
 
   it('maps Prisma P2034 (serialization conflict) to ABORTED', async () => {
@@ -100,7 +103,7 @@ describe('GrpcExceptionFilter', () => {
       clientVersion: 'test',
     });
     const result = await runFilter(err);
-    expect(result.getError()).toMatchObject({ code: GrpcStatus.ABORTED });
+    expect(result).toMatchObject({ code: GrpcStatus.ABORTED });
   });
 
   it('maps an unmapped Prisma code to INTERNAL with a scrubbed message', async () => {
@@ -109,7 +112,7 @@ describe('GrpcExceptionFilter', () => {
       clientVersion: 'test',
     });
     const result = await runFilter(err);
-    expect(result.getError()).toMatchObject({
+    expect(result).toMatchObject({
       code: GrpcStatus.INTERNAL,
       message: 'Internal server error',
     });
@@ -117,7 +120,7 @@ describe('GrpcExceptionFilter', () => {
 
   it('maps an unknown Error to INTERNAL and never leaks its message', async () => {
     const result = await runFilter(new Error('SELECT * FROM users WHERE secret=$1'));
-    const error = result.getError() as { code: number; message: string };
+    const error = result;
     expect(error.code).toBe(GrpcStatus.INTERNAL);
     expect(error.message).toBe('Internal server error');
     expect(error.message).not.toMatch(/SELECT|secret/);
